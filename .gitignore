@@ -1,0 +1,9 @@
+# folders to ignore
+/data
+
+# files to ignore
+*.log
+*.csv
+*.json
+*.txt
+
