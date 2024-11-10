@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from function import process_csv_files, build_bottom_line, build_bar_chart
 import os
+import plotly.express as px
 from tempfile import mkdtemp
 import shutil
 

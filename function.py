@@ -141,15 +141,22 @@ def build_bar_chart(merged_df):
 
     # build the bar chart
     fig = px.bar(monthly_totals, x=monthly_totals.index, y=['Income', 'Expense', 'Balance'], 
-                 title='Monthly Totals', labels={'x':'Month', 'value':'Amount'}, barmode='group')
+                 title='Monthly Totals', 
+                 labels={'x':'Month', 'value':'Amount'}, 
+                 barmode='group',
+                 color_discrete_map={
+                     'Income': '#2E86C1',  # Blue
+                     'Expense': '#E74C3C',  # Red
+                     'Balance': '#27AE60'   # Green
+                 })
     
-    # Show all x-axis ticks
+    # Update layout with correct tick configuration
     fig.update_layout(
         xaxis=dict(
-            tickmode='linear',
-            tick0=0,
-            dtick=1,
-            tickangle=45  # Rotate labels 45 degrees
+            type='category',  # Treat x-axis as categorical
+            tickangle=45,     # Rotate labels 45 degrees
+            tickmode='array',
+            tickvals=monthly_totals.index
         )
     )
     return fig
@@ -158,13 +165,13 @@ def build_bar_chart(merged_df):
 
 # Example usage --------------------------------------------------------------------------
 
-# folder_path = 'data'
-# # maybe in the future we add rent as a parameter
-# merged_df = process_csv_files(folder_path)  # used to build the summary table, used in the viewer dropdown, and used in the time series graph
-# bottom_line_df = build_bottom_line(merged_df)  # displayed as summary table
+folder_path = 'data'
+# maybe in the future we add rent as a parameter
+merged_df = process_csv_files(folder_path)  # used to build the summary table, used in the viewer dropdown, and used in the time series graph
+bottom_line_df = build_bottom_line(merged_df)  # displayed as summary table
 
-# print(bottom_line_df)
+print(bottom_line_df)
 
-# bar_chart = build_bar_chart(merged_df)
-# bar_chart.show()
+bar_chart = build_bar_chart(merged_df)
+bar_chart.show()
 
