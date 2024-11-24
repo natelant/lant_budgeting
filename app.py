@@ -6,8 +6,12 @@ import plotly.express as px
 from tempfile import mkdtemp
 import shutil
 
-st.set_page_config(page_title="Financial Dashboard", layout="wide")
-st.title("Financial Dashboard")
+st.set_page_config(
+    page_title="Financial Dashboard", 
+    page_icon=":money_with_wings:",
+    layout="wide"
+)
+st.title("Cash Money Page")
 
 # Cache the data processing
 @st.cache_data
@@ -15,7 +19,7 @@ def process_data(temp_folder):
     return process_csv_files(temp_folder)
 
 # File uploader section
-st.subheader("Upload Your Financial Data")
+st.subheader("Upload JP Morgan Files")
 uploaded_files = st.file_uploader(
     "Upload your CSV files (Checking and Credit Card statements)",
     type="csv",
@@ -36,20 +40,14 @@ if uploaded_files:
         # Process the data
         merged_df = process_data(temp_dir)
         
-        # Create two columns for the dashboard
-        col1, col2 = st.columns([2, 1])
+        # Display elements vertically
+        st.subheader("Monthly Summary")
+        bar_chart = build_bar_chart(merged_df)
+        st.plotly_chart(bar_chart, use_container_width=True)
         
-        with col1:
-            st.subheader("Monthly Summary")
-            # Create and display the bar chart
-            bar_chart = build_bar_chart(merged_df)
-            st.plotly_chart(bar_chart, use_container_width=True)
-        
-        with col2:
-            st.subheader("Detailed Breakdown")
-            # Create and display the summary table
-            bottom_line_df = build_bottom_line(merged_df)
-            st.dataframe(bottom_line_df, use_container_width=True)
+        st.subheader("Detailed Breakdown")
+        bottom_line_df = build_bottom_line(merged_df)
+        st.dataframe(bottom_line_df, use_container_width=True)
         
     finally:
         # Clean up temporary directory

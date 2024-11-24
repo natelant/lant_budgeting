@@ -91,7 +91,7 @@ def process_csv_files(folder_path):
     return merged_df
 
 
-def build_bottom_line(merged_df):
+def build_bottom_line(merged_df): 
     # Filter out the INTERNAL_TRANSFER category 
     filtered_df = merged_df[~merged_df['Category'].isin(['INTERNAL_TRANSFER'])]
 
@@ -111,17 +111,27 @@ def build_bottom_line(merged_df):
         value_name='Amount'
     )
 
-    # build the pivot tables
-    monthly_pivot = long_format_df.pivot(index='Sorting Type', columns='Month', values='Amount')
-    # Create pivot tables for Income and Expenses
-    income_pivot = pd.pivot_table(income_df, values='Amount', index='Category', columns='Month', aggfunc='sum')
-    expense_pivot = pd.pivot_table(expense_df, values='Amount', index='Category', columns='Month', aggfunc='sum')
+    # Define the desired order of Sorting Type
+    sorting_type_order = ['Income', 'Expense', 'Balance']
+    
+    # Create pivot and reindex rows to match desired order
+    monthly_pivot = long_format_df.pivot(index='Sorting Type', columns='Month', values='Amount')\
+                                .reindex(sorting_type_order)
+    
+    # Get the ordered list of months from monthly_pivot
+    ordered_months = monthly_pivot.columns.tolist()
+    
+    # Create pivot tables for Income and Expenses and reindex columns to match monthly_pivot
+    income_pivot = pd.pivot_table(income_df, values='Amount', index='Category', 
+                                 columns='Month', aggfunc='sum').reindex(columns=ordered_months)
+    expense_pivot = pd.pivot_table(expense_df, values='Amount', index='Category', 
+                                  columns='Month', aggfunc='sum').reindex(columns=ordered_months)
     
     # concatenate the pivot tables
     pivot_table = pd.concat([
-        pd.concat([monthly_pivot], keys=['Monthly Totals']),
         pd.concat([income_pivot], keys=['Income']),
-        pd.concat([expense_pivot], keys=['Expenses'])
+        pd.concat([expense_pivot], keys=['Expenses']),
+        pd.concat([monthly_pivot], keys=['Monthly Totals'])
     ])
 
     return pivot_table
@@ -161,7 +171,72 @@ def build_bar_chart(merged_df):
     )
     return fig
 
-
+def build_timeseries(merged_df, income_or_expenses, month, category):
+    # Filter data
+    filtered_df = merged_df[merged_df['Sorting Type'] == income_or_expenses]
+    filtered_df = filtered_df[filtered_df['Month'] == month]
+    filtered_df = filtered_df[filtered_df['Category'] == category]
+    
+    # Sort by date and take absolute value of Amount
+    filtered_df = filtered_df.sort_values('Transaction Date')
+    filtered_df['Amount'] = filtered_df['Amount'].abs()
+    
+    # Calculate cumulative sum
+    filtered_df['Cumulative'] = filtered_df['Amount'].cumsum()
+    
+    # Create scatter plot for individual transactions
+    fig = px.scatter(
+        filtered_df,
+        x='Transaction Date',
+        y='Amount',
+        title=f'{category} Transactions for {month}',
+        labels={
+            'Transaction Date': 'Date',
+            'Amount': f'Amount ($)'
+        },
+        hover_data=['Description']
+    )
+    
+    # Add cumulative line on secondary y-axis
+    fig.add_scatter(
+        x=filtered_df['Transaction Date'],
+        y=filtered_df['Cumulative'],
+        name='Running Total',
+        line=dict(dash='dot'),
+        yaxis='y2',
+        hovertemplate="Running Total: $%{y:.2f}<br>"
+    )
+    
+    # Update layout with secondary y-axis
+    fig.update_layout(
+        showlegend=True,
+        xaxis_tickangle=45,
+        yaxis2=dict(
+            title='Cumulative Amount ($)',
+            overlaying='y',
+            side='right'
+        ),
+        yaxis_title='Transaction Amount ($)',
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01
+        )
+    )
+    
+    # Update scatter plot traces
+    fig.update_traces(
+        marker=dict(size=10),
+        hovertemplate="<br>".join([
+            "Date: %{x}",
+            "Amount: $%{y:.2f}",
+            "Description: %{customdata[0]}"
+        ]),
+        selector=dict(mode='markers')  # Only apply to scatter points
+    )
+    
+    return fig
 
 # Example usage --------------------------------------------------------------------------
 
@@ -172,6 +247,9 @@ bottom_line_df = build_bottom_line(merged_df)  # displayed as summary table
 
 print(bottom_line_df)
 
-bar_chart = build_bar_chart(merged_df)
-bar_chart.show()
+# bar_chart = build_bar_chart(merged_df)
+# bar_chart.show()
+
+timeseries_fig = build_timeseries(merged_df, 'Expense', '2024-09', 'Groceries')
+timeseries_fig.show()
 
