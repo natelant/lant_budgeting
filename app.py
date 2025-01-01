@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from function import process_csv_files, build_bottom_line, build_bar_chart
+from function import process_csv_files, build_bottom_line, build_bar_chart, build_scatterplot
 import os
 import plotly.express as px
 from tempfile import mkdtemp
@@ -39,15 +39,32 @@ if uploaded_files:
         
         # Process the data
         merged_df = process_data(temp_dir)
+
+        # filter out transactions by ID
+        st.subheader("Filter Transactions by ID")
+        id_filter = st.text_input("Enter IDs (comma-separated)")
+        
+        if id_filter:
+            # Split the input string into a list and strip whitespace
+            id_list = [int(id.strip()) for id in id_filter.split(',')]
+            filtered_df = merged_df[~merged_df['ID'].isin(id_list)]
+        else:
+            filtered_df = merged_df.copy()  # Show all data if no filter
         
         # Display elements vertically
         st.subheader("Monthly Summary")
-        bar_chart = build_bar_chart(merged_df)
+        bar_chart = build_bar_chart(filtered_df)
         st.plotly_chart(bar_chart, use_container_width=True)
         
         st.subheader("Detailed Breakdown")
-        bottom_line_df = build_bottom_line(merged_df)
+        bottom_line_df = build_bottom_line(filtered_df)
         st.dataframe(bottom_line_df, use_container_width=True)
+
+        st.subheader("All Transactions")
+        scatterplot_expenses = build_scatterplot(filtered_df, 'Expense')
+        scatterplot_income = build_scatterplot(filtered_df, 'Income')
+        st.plotly_chart(scatterplot_expenses, use_container_width=True)
+        st.plotly_chart(scatterplot_income, use_container_width=True)
         
     finally:
         # Clean up temporary directory

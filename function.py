@@ -87,6 +87,7 @@ def process_csv_files(folder_path):
     # Convert 'Transaction Date' to datetime and create 'Month' column
     merged_df['Transaction Date'] = pd.to_datetime(merged_df['Transaction Date'])
     merged_df['Month'] = merged_df['Transaction Date'].dt.to_period('M')
+    merged_df['ID'] = merged_df.index
 
     return merged_df
 
@@ -180,34 +181,82 @@ def build_timeseries(merged_df, income_or_expenses, month, category):
     # Sort by date and take absolute value of Amount
     filtered_df = filtered_df.sort_values('Transaction Date')
     filtered_df['Amount'] = filtered_df['Amount'].abs()
-    
-    # Calculate cumulative sum
     filtered_df['Cumulative'] = filtered_df['Amount'].cumsum()
+
+        # Get the first and last day of the month
+    first_day = pd.to_datetime(month + '-01')
+    last_day = (first_day + pd.offsets.MonthEnd(0))
     
-    # Create scatter plot for individual transactions
+    # Create custom week bins starting from the 1st Monday
+    weekly_sums = filtered_df.groupby(pd.Grouper(
+        key='Transaction Date',
+        freq='W-MON',  # Weeks start on Monday
+        origin='start_day'  # Align with calendar weeks
+    ))['Amount'].sum()
+    
+    # Filter out weeks that aren't complete or aren't in our month
+    weekly_sums = weekly_sums[
+        (weekly_sums.index.strftime('%Y-%m') == month) & 
+        (weekly_sums.index + pd.Timedelta(days=6) <= last_day)
+    ]
+    
+    # Define color based on transaction type
+    color = '#2E86C1' if income_or_expenses == 'Income' else '#E74C3C'
+    
+    # Create base scatter plot FIRST
     fig = px.scatter(
         filtered_df,
         x='Transaction Date',
         y='Amount',
         title=f'{category} Transactions for {month}',
-        labels={
-            'Transaction Date': 'Date',
-            'Amount': f'Amount ($)'
-        },
+        labels={'Transaction Date': 'Date', 'Amount': f'Amount ($)'},
         hover_data=['Description']
     )
     
-    # Add cumulative line on secondary y-axis
+    # Update scatter points color
+    fig.update_traces(marker=dict(color=color, size=10))
+    
+    # Add cumulative line
     fig.add_scatter(
         x=filtered_df['Transaction Date'],
         y=filtered_df['Cumulative'],
         name='Running Total',
-        line=dict(dash='dot'),
+        line=dict(dash='dot', color=color),
         yaxis='y2',
         hovertemplate="Running Total: $%{y:.2f}<br>"
     )
     
-    # Update layout with secondary y-axis
+    # Now add the horizontal lines for weekly sums
+    for week_date, week_sum in weekly_sums.items():
+        week_end = week_date + pd.Timedelta(days=6)
+        
+        # Add weekly sum line
+        fig.add_shape(
+            type="line",
+            x0=week_date,
+            x1=week_end,
+            y0=week_sum,
+            y1=week_sum,
+            yref='y2',
+            line=dict(
+                color=color,
+                width=2,
+                dash="dot",
+            ),
+            opacity=0.7
+        )
+        # Add weekly sum annotation
+        fig.add_annotation(
+            x=week_end,
+            y=week_sum,
+            yref='y2',
+            text=f"Week of {week_date.strftime('%m/%d')}: ${week_sum:.2f}",
+            showarrow=False,
+            xanchor="right",
+            yanchor="bottom"
+        )
+    
+    # Update layout
     fig.update_layout(
         showlegend=True,
         xaxis_tickangle=45,
@@ -225,31 +274,59 @@ def build_timeseries(merged_df, income_or_expenses, month, category):
         )
     )
     
-    # Update scatter plot traces
-    fig.update_traces(
-        marker=dict(size=10),
-        hovertemplate="<br>".join([
-            "Date: %{x}",
-            "Amount: $%{y:.2f}",
-            "Description: %{customdata[0]}"
-        ]),
-        selector=dict(mode='markers')  # Only apply to scatter points
-    )
-    
     return fig
 
-# Example usage --------------------------------------------------------------------------
 
-folder_path = 'data'
-# maybe in the future we add rent as a parameter
-merged_df = process_csv_files(folder_path)  # used to build the summary table, used in the viewer dropdown, and used in the time series graph
-bottom_line_df = build_bottom_line(merged_df)  # displayed as summary table
+def build_scatterplot(merged_df, category):
+    # Filter out the INTERNAL_TRANSFER category 
+    filtered_df = merged_df[~merged_df['Category'].isin(['INTERNAL_TRANSFER'])].copy()
 
-print(bottom_line_df)
+    expense_df = filtered_df[filtered_df['Sorting Type'] == category].copy()
+    # Multiply by -1 to invert the signs while preserving reimbursements
+    if category == 'Expense':
+        expense_df['Amount'] = expense_df['Amount'] * -1
+    elif category == 'Income':
+        expense_df['Amount'] = expense_df['Amount']
 
-# bar_chart = build_bar_chart(merged_df)
-# bar_chart.show()
+    # build scatter plot of all transactions with color by category
+    fig = px.scatter(
+        expense_df, 
+        x='Transaction Date', 
+        y='Amount', 
+        color='Category',
+        title=f'All {category}s', 
+        labels={'Transaction Date': 'Date', 'Amount': 'Amount ($)'}, 
+        hover_data=['Description', 'ID'])
 
-timeseries_fig = build_timeseries(merged_df, 'Expense', '2024-09', 'Groceries')
-timeseries_fig.show()
+    return fig
+    
+
+# # Example usage --------------------------------------------------------------------------
+
+# folder_path = 'data'
+# filter_list = '942, 782, 777, 195, 16'
+
+# # maybe in the future we add rent as a parameter
+# merged_df = process_csv_files(folder_path)  # used to build the summary table, used in the viewer dropdown, and used in the time series graph
+
+# if filter_list:
+#     # Split the input string and convert to integers
+#     id_list = [int(id.strip()) for id in filter_list.split(',')]
+#     filtered_df = merged_df[~merged_df['ID'].isin(id_list)]
+# else:
+#     filtered_df = merged_df.copy() 
+
+
+# # bottom_line_df = build_bottom_line(merged_df)  # displayed as summary table
+
+# # print(bottom_line_df)
+
+# # bar_chart = build_bar_chart(merged_df)
+# # bar_chart.show()
+
+# # timeseries_fig = build_timeseries(merged_df, 'Expense', '2024-10', 'Groceries')
+# # timeseries_fig.show()
+
+# scatterplot_fig = build_scatterplot(filtered_df, 'Expense')
+# scatterplot_fig.show()
 
