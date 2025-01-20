@@ -38,7 +38,7 @@ def categorize_transaction(row):
         elif 'DEPOSIT #' in description:
             return 'Check'
         
-        elif any(term in description for term in ['Chase card', 'Transfer from SAV', 'WELLS FARGO', 'Goldman']):
+        elif any(term in description for term in ['Chase card', 'Transfer From ', 'Transfer to ', 'Transfer from', 'WELLS FARGO', 'Goldman']):
             return 'INTERNAL_TRANSFER'
     # Add more conditions as needed
     return 'Uncategorized'
@@ -301,32 +301,143 @@ def build_scatterplot(merged_df, category):
     return fig
     
 
+def build_expense_tracker(merged_df, category, month):
+    # Filter data for the selected category
+    filtered_df = merged_df[merged_df['Sorting Type'] == 'Expense']
+    filtered_df = filtered_df[filtered_df['Category'] == category]
+    
+    # Get current month's data
+    month_df = filtered_df[filtered_df['Month'] == month].copy()
+    month_df['Day'] = month_df['Transaction Date'].dt.day
+    month_df['Amount'] = month_df['Amount'] * -1  # Invert signs while preserving refunds
+    month_df = month_df.sort_values('Day')
+    month_df['Cumulative'] = month_df['Amount'].cumsum()
+    
+    # Calculate linear historical average trend
+    historical_df = filtered_df[filtered_df['Month'] < month].copy()
+    if not historical_df.empty:
+        # Calculate average monthly total with inverted signs
+        avg_monthly_total = (historical_df['Amount'] * -1).groupby(historical_df['Month']).sum().mean()
+        
+        # Get number of days in the current month using the Period object
+        days_in_month = month.days_in_month
+        
+        # Create linear trend line
+        daily_avg = avg_monthly_total / days_in_month
+        avg_by_day = pd.DataFrame({
+            'Day': range(1, days_in_month + 1),
+            'Cumulative': [daily_avg * day for day in range(1, days_in_month + 1)]
+        })
+    
+    # Create the plot
+    fig = px.scatter(
+        month_df,
+        x='Day',
+        y='Cumulative',
+        title=f'{category} Expense Tracker for {month}',
+        labels={'Day': 'Day of Month', 'Cumulative': 'Cumulative Amount ($)'},
+        hover_data=['Description', 'Amount']
+    )
+    
+    # Update scatter points
+    fig.update_traces(
+        marker=dict(color='#E74C3C', size=10),
+        name='Current Month'
+    )
+    
+    # Add line connecting the points
+    fig.add_scatter(
+        x=month_df['Day'],
+        y=month_df['Cumulative'],
+        mode='lines',
+        line=dict(color='#E74C3C', dash='dot'),
+        showlegend=False
+    )
+    
+    # Add historical average line if data exists
+    if not historical_df.empty:
+        fig.add_scatter(
+            x=avg_by_day['Day'],
+            y=avg_by_day['Cumulative'],
+            mode='lines',
+            name='Historical Average',
+            line=dict(color='#2E86C1', dash='dash')
+        )
+    
+    # Update layout
+    fig.update_layout(
+        xaxis=dict(
+            tickmode='linear',
+            tick0=1,
+            dtick=1,
+            tickangle=45
+        ),
+        showlegend=True,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01
+        )
+    )
+    
+    return fig
+
+
+def build_expense_trends(merged_df, category, exclude_month):
+    # Filter data for the selected category and expenses only
+    filtered_df = merged_df[
+        (merged_df['Sorting Type'] == 'Expense') & 
+        (merged_df['Category'] == category)
+    ].copy()
+    
+    # Calculate monthly totals (multiply by -1 to make expenses positive)
+    monthly_totals = filtered_df.groupby('Month')['Amount'].sum() * -1
+    
+    # Calculate average excluding specified month
+    historical_avg = monthly_totals[monthly_totals.index != exclude_month].mean()
+    
+    # Create the bar chart
+    fig = px.bar(
+        x=monthly_totals.index.astype(str),
+        y=monthly_totals.values,
+        title=f'{category} Monthly Expenses',
+        labels={'x': 'Month', 'y': 'Total Amount ($)'}
+    )
+    
+    # Update bar colors (excluded month in red, others in blue)
+    fig.update_traces(
+        marker_color=[
+            '#E74C3C' if m == exclude_month else '#2E86C1' 
+            for m in monthly_totals.index
+        ]
+    )
+    
+    # Add horizontal average line
+    fig.add_hline(
+        y=historical_avg,
+        line_dash="dash",
+        line_color="#27AE60",
+        annotation_text=f"Historical Average: ${historical_avg:.2f}",
+        annotation_position="top right"
+    )
+    
+    # Update layout
+    fig.update_layout(
+        xaxis_tickangle=45,
+        showlegend=False
+    )
+    
+    return fig
+
 # # Example usage --------------------------------------------------------------------------
 
-# folder_path = 'data'
-# filter_list = '942, 782, 777, 195, 16'
+# folder_path = 'data/jan 19'
 
-# # maybe in the future we add rent as a parameter
 # merged_df = process_csv_files(folder_path)  # used to build the summary table, used in the viewer dropdown, and used in the time series graph
 
-# if filter_list:
-#     # Split the input string and convert to integers
-#     id_list = [int(id.strip()) for id in filter_list.split(',')]
-#     filtered_df = merged_df[~merged_df['ID'].isin(id_list)]
-# else:
-#     filtered_df = merged_df.copy() 
 
 
-# # bottom_line_df = build_bottom_line(merged_df)  # displayed as summary table
-
-# # print(bottom_line_df)
-
-# # bar_chart = build_bar_chart(merged_df)
-# # bar_chart.show()
-
-# # timeseries_fig = build_timeseries(merged_df, 'Expense', '2024-10', 'Groceries')
-# # timeseries_fig.show()
-
-# scatterplot_fig = build_scatterplot(filtered_df, 'Expense')
-# scatterplot_fig.show()
+# expense_trends_fig = build_expense_trends(merged_df, 'Groceries', '2023-04')
+# expense_trends_fig.show()
 
