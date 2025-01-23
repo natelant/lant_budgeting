@@ -53,24 +53,71 @@ if uploaded_files:
             filtered_df = merged_df.copy()  # Show all data if no filter
         
         # Display elements vertically
+        st.subheader("All Transactions")
+        scatterplot_expenses = build_scatterplot(filtered_df, 'Expense')
+        scatterplot_income = build_scatterplot(filtered_df, 'Income')
+        st.plotly_chart(scatterplot_expenses, use_container_width=True)
+        st.plotly_chart(scatterplot_income, use_container_width=True)
+        
         st.subheader("Monthly Summary")
         bar_chart = build_bar_chart(filtered_df)
         st.plotly_chart(bar_chart, use_container_width=True)
         
         st.subheader("Detailed Breakdown")
         bottom_line_df = build_bottom_line(filtered_df)
-        st.dataframe(bottom_line_df, use_container_width=True)
+        
+        # Calculate averages excluding the most recent month
+        most_recent_month = bottom_line_df.columns[-1]  # Last column is most recent
+        historical_df = bottom_line_df.drop(columns=[most_recent_month])
+        category_averages = historical_df.mean(axis=1)
+        
+        # Function to color cells based on comparison with average
+        def color_cells(val):
+            if isinstance(val, pd.Series):
+                return [''] * len(val)
+            if pd.isna(val):
+                return ''
+            try:
+                # Convert value to float for comparison
+                val = float(val)
+                # Get the category (row) name from the current cell's index
+                category = bottom_line_df.index[bottom_line_df.eq(val).any(axis=1)].values[0]
+                avg = category_averages[category]
+                
+                # Calculate percentage difference from average
+                pct_diff = (val - avg) / avg if avg != 0 else 0
+                
+                # Convert to RGB color (red for above average, green for below)
+                if pct_diff > 0:
+                    intensity = min(pct_diff * 0.5, 1)  # Scale the intensity
+                    return f'background-color: rgba(255, 0, 0, {intensity})'
+                else:
+                    intensity = min(abs(pct_diff) * 0.5, 1)  # Scale the intensity
+                    return f'background-color: rgba(0, 255, 0, {intensity})'
+            except Exception as e:
+                return ''
+        
+        # Apply styling and format numbers
+        styled_df = bottom_line_df.style\
+            .format("${:,.2f}")\
+            .applymap(color_cells)
+        
+        st.dataframe(styled_df, use_container_width=True)
 
-        st.subheader("All Transactions")
-        scatterplot_expenses = build_scatterplot(filtered_df, 'Expense')
-        scatterplot_income = build_scatterplot(filtered_df, 'Income')
-        st.plotly_chart(scatterplot_expenses, use_container_width=True)
-        st.plotly_chart(scatterplot_income, use_container_width=True)
+        
 
         # Budget analysis
         st.subheader("Expense Tracker")
         col1, col2 = st.columns(2)  # Create two equal-width columns
         with col1:
+            months = sorted(filtered_df['Month'].unique(), reverse=True)
+            month_selection = st.selectbox(
+                "Select a month",
+                months,
+                index=0  # Most recent month
+            )
+
+        with col2:
             categories = filtered_df['Category'].unique()
             default_category_idx = np.where(categories == 'Groceries')[0][0]
             expense_category = st.selectbox(
@@ -78,13 +125,7 @@ if uploaded_files:
                 categories,
                 index=int(default_category_idx)
             )
-        with col2:
-            months = sorted(filtered_df['Month'].unique(), reverse=True)
-            month_selection = st.selectbox(
-                "Select a month",
-                months,
-                index=0  # Most recent month
-            )
+            
         expense_tracker = build_expense_tracker(filtered_df, expense_category, month_selection)
         st.plotly_chart(expense_tracker, use_container_width=True)
 
