@@ -45,7 +45,7 @@ def categorize_transaction(row):
 
 
 def process_csv_files(folder_path):
-    checking_account_df = None
+    checking_account_dfs = []  # New list to store multiple checking account DFs
     credit_card_dfs = []
 
     for filename in os.listdir(folder_path):
@@ -53,15 +53,15 @@ def process_csv_files(folder_path):
             file_path = os.path.join(folder_path, filename)
             
             if 'Chase5121' in filename:
-                # This is the checking account file
-                checking_account_df = pd.read_csv(file_path, index_col=False)
+                # Read checking account file
+                df = pd.read_csv(file_path, index_col=False)
                 
                 # If the first column is unnamed, give it a name
-                if checking_account_df.columns[0] == 'Unnamed: 0':
-                    checking_account_df = checking_account_df.rename(columns={'Unnamed: 0': 'Transaction_Type'})
+                if df.columns[0] == 'Unnamed: 0':
+                    df = df.rename(columns={'Unnamed: 0': 'Transaction_Type'})
                 
-                # Clean the checking account data
-                checking_account_df = clean_checking_account(checking_account_df)
+                checking_account_dfs.append(df)  # Append to list instead of direct assignment
+                
             else:
                 # This is a credit card file
                 credit_card_df = pd.read_csv(file_path)
@@ -74,6 +74,13 @@ def process_csv_files(folder_path):
                 credit_card_df['Category'] = credit_card_df.apply(lambda row: 'Groceries' if 'WALMART' in str(row['Description']) else row['Category'], axis=1)
                 
                 credit_card_dfs.append(credit_card_df)
+
+    # Combine all checking account dataframes and clean the combined result
+    if checking_account_dfs:
+        checking_account_df = pd.concat(checking_account_dfs, ignore_index=True)
+        checking_account_df = clean_checking_account(checking_account_df)
+    else:
+        checking_account_df = pd.DataFrame()  # Empty DataFrame if no checking files found
 
     # Combine all credit card dataframes
     combined_credit_card_df = pd.concat(credit_card_dfs, ignore_index=True)
