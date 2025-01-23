@@ -41,16 +41,32 @@ if uploaded_files:
         # Process the data
         merged_df = process_data(temp_dir)
 
-        # filter out transactions by ID
-        st.subheader("Filter Transactions by ID")
-        id_filter = st.text_input("Enter IDs (comma-separated)")
+        # Create two columns for filters
+        filter_col1, filter_col2 = st.columns(2)
+        
+        with filter_col1:
+            # filter out transactions by ID
+            st.subheader("Filter Transactions by ID")
+            id_filter = st.text_input("Enter IDs (comma-separated)")
+        
+        with filter_col2:
+            # filter out transactions by Description
+            st.subheader("Filter Transactions by Description")
+            desc_filter = st.text_input("Enter descriptions (comma-separated)")
+
+        # Apply both filters
+        filtered_df = merged_df.copy()  # Start with all data
         
         if id_filter:
             # Split the input string into a list and strip whitespace
             id_list = [int(id.strip()) for id in id_filter.split(',')]
-            filtered_df = merged_df[~merged_df['ID'].isin(id_list)]
-        else:
-            filtered_df = merged_df.copy()  # Show all data if no filter
+            filtered_df = filtered_df[~filtered_df['ID'].isin(id_list)]
+            
+        if desc_filter:
+            # Split the input string into a list and strip whitespace
+            desc_list = [desc.strip() for desc in desc_filter.split(',')]
+            # Filter out rows where Description contains any of the entered texts
+            filtered_df = filtered_df[~filtered_df['Description'].str.contains('|'.join(desc_list), case=False, na=False)]
         
         # Display elements vertically
         st.subheader("All Transactions")
