@@ -451,47 +451,96 @@ def build_expense_trends(merged_df, category, exclude_month):
     return fig
 
 
-def build_top_expenses_rank(merged_df, month):
+def standardize_merchant_name(description):
+    """Standardize merchant names to group similar entries."""
+    description = str(description).upper()  # Convert to uppercase for consistency
+    
+    # Dictionary of merchant name mappings
+    merchant_mappings = {
+        'WALMART': ['WAL-MART', 'WALMART.COM', 'WAL MART', 'WALMART #'],
+        'AMAZON': ['AMAZON.COM', 'AMZN', 'AMAZON PRIME', 'AMAZON DIGITAL'],
+        'COSTCO': ['COSTCO WHSE', 'COSTCO GAS', 'COSTCO WHOLESALE'],
+        'SMITHS': ['SMITHS FOOD', "SMITH'S", 'SMITHS #'],
+        'JESUSCHRIST DONATION': ['JESUSCHRIST', 'DONATION'],
+        'CHEVRON': ['CHEVRON'],
+        'MAVERIK': ['MAVERIK'],
+        '7-ELEVEN': ['7-ELEVEN'],
+        'SPEEDWAY': ['SPEEDWAY'],
+        'SHELL': ['SHELL'],
+        'CVS': ['CVS/PHARMACY'],
+        'TRADER JOES': ['TRADER JOE'],
+        'CHICK-FIL-A': ['CHICK-FIL-A'],
+        'WENDYS': ['WENDYS'],
+        'COSTA VIDA': ['COSTA VIDA'],
+        'CAFE RIO': ['CAFE RIO'],
+        'JIMMY JOHNS': ['JIMMY JOHNS'],
+        'PHILLIPS 66': ['PHILLIPS 66'],
+        'ZUPAS': ['ZUPAS'],
+        'AUBERGINE': ['AUBERGINE'],
+
+        # Add more mappings as needed
+    }
+    
+    # Check each merchant group
+    for standard_name, variations in merchant_mappings.items():
+        if any(variant in description for variant in variations + [standard_name]):
+            return standard_name
+            
+    return description
+
+def build_top_expenses_rank(merged_df, month, category):
     # Filter data for the selected month and expenses only
     filtered_df = merged_df[(merged_df['Month'] == month) & 
                            (merged_df['Sorting Type'] == 'Expense') &
-                           (~merged_df['Category'].isin(['INTERNAL_TRANSFER', 'Venmo']))]
+                           (~merged_df['Category'].isin(['INTERNAL_TRANSFER', 'Venmo']))].copy()
     
-    # Group by description and sum amounts (make amounts positive)
-    description_totals = filtered_df.groupby('Description')['Amount'].sum() * -1
+    # Standardize merchant names
+    filtered_df['Standardized_Description'] = filtered_df['Description'].apply(standardize_merchant_name)
     
-    # Sort by amount and get top expenses
-    description_totals = description_totals.sort_values(ascending=True)
+    # Create a DataFrame with description totals and categories
+    description_data = filtered_df.groupby('Standardized_Description').agg({
+        'Amount': lambda x: x.sum() * -1,
+        'Category': 'first'  # Get the category for each description
+    }).reset_index()
+    
+    # Sort by amount and get top 20
+    description_data = description_data.sort_values('Amount', ascending=True).tail(30)
+    
+    # Create color array
+    colors = ['#2E86C1' if cat == category else '#E74C3C' 
+             for cat in description_data['Category']]
     
     # Create bar chart
     fig = px.bar(
-        x=description_totals.values,
-        y=description_totals.index,
+        x=description_data['Amount'],
+        y=description_data['Standardized_Description'],
         orientation='h',  # horizontal bars
-        title=f'Top Expenses by Merchant for {month}',
+        title=f'Top 20 Expenses by Merchant for {month}',
         labels={
             'x': 'Amount ($)',
-            'y': 'Merchant'
-        }
+            'y': 'Merchant',
+            'Standardized_Description': 'Merchant'
+        },
+        custom_data=[description_data['Category']]  # Add category data for hover
     )
     
-    # Update layout
-    fig.update_layout(
-        showlegend=False,
-        xaxis_title="Amount ($)",
-        yaxis_title="Merchant",
-        height=max(400, len(description_totals) * 20),  # Dynamically adjust height based on number of items
-        # Format x-axis labels as currency
-        xaxis=dict(
-            tickprefix="$",
-            tickformat=",.0f"
-        )
-    )
-    
-    # Update bar colors
+    # Update traces with custom colors and hover template
     fig.update_traces(
-        marker_color='#E74C3C',  # Red color for expenses
-        hovertemplate="$%{x:,.2f}<extra></extra>"  # Clean hover label
+        marker_color=colors,
+        hovertemplate="<b>%{y}</b><br>" +
+                      "Amount: $%{x:,.2f}<br>" +
+                      "Category: %{customdata[0]}" +
+                      "<extra></extra>"  # Removes trace name from hover
+    )
+    
+    # Update layout to ensure all labels are visible
+    fig.update_layout(
+        height=600,  # Fixed height that works well for 20 items
+        margin=dict(l=20, r=20, t=40, b=20),  # Adjust margins
+        yaxis=dict(
+            tickmode='linear',  # Show all ticks
+            tickangle=0,  # Keep labels horizontal
+        )
     )
     
     return fig

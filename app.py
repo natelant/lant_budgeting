@@ -137,12 +137,20 @@ if uploaded_files:
             )
 
         with col2:
-            categories = filtered_df['Category'].unique()
-            default_category_idx = np.where(categories == 'Groceries')[0][0]
+            # Get unique expense categories only
+            categories = filtered_df[filtered_df['Sorting Type'] == 'Expense']['Category'].unique()
+            categories = sorted(categories[~np.isin(categories, ['INTERNAL_TRANSFER'])])
+            
+            # Set default index (first category if Groceries not found)
+            try:
+                default_category_idx = categories.index('Groceries')
+            except ValueError:
+                default_category_idx = 0
+                
             expense_category = st.selectbox(
                 "Select an expense category", 
                 categories,
-                index=int(default_category_idx)
+                index=default_category_idx
             )
             
         expense_tracker = build_expense_tracker(filtered_df, expense_category, month_selection)
@@ -156,7 +164,7 @@ if uploaded_files:
 
         # Top Expenses Rank
         st.subheader("Top Expenses Rank")
-        top_expenses_rank = build_top_expenses_rank(filtered_df, month_selection)
+        top_expenses_rank = build_top_expenses_rank(filtered_df, month_selection, expense_category)
         st.plotly_chart(top_expenses_rank, use_container_width=True)
 
         
