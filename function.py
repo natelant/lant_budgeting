@@ -316,8 +316,18 @@ def build_expense_tracker(merged_df, category, month):
     # Calculate linear historical average trend
     historical_df = filtered_df[filtered_df['Month'] < month].copy()
     if not historical_df.empty:
-        # Calculate average monthly total with inverted signs
-        avg_monthly_total = (historical_df['Amount'] * -1).groupby(historical_df['Month']).sum().mean()
+        # Calculate monthly totals with inverted signs
+        monthly_totals = (historical_df['Amount'] * -1).groupby(historical_df['Month']).sum()
+        
+        # Calculate average excluding outliers
+        Q1 = monthly_totals.quantile(0.25)
+        Q3 = monthly_totals.quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+        filtered_totals = monthly_totals[(monthly_totals >= lower_bound) & 
+                                       (monthly_totals <= upper_bound)]
+        avg_monthly_total = filtered_totals.mean()
         
         # Get number of days in the current month using the Period object
         days_in_month = month.days_in_month
@@ -394,8 +404,18 @@ def build_expense_trends(merged_df, category, exclude_month):
     # Calculate monthly totals (multiply by -1 to make expenses positive)
     monthly_totals = filtered_df.groupby('Month')['Amount'].sum() * -1
     
-    # Calculate average excluding specified month
-    historical_avg = monthly_totals[monthly_totals.index != exclude_month].mean()
+    # Calculate average excluding specified month and outliers
+    historical_data = monthly_totals[monthly_totals.index != exclude_month]
+    
+    # Calculate average excluding outliers
+    Q1 = historical_data.quantile(0.25)
+    Q3 = historical_data.quantile(0.75)
+    IQR = Q3 - Q1
+    lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 + 1.5 * IQR
+    filtered_data = historical_data[(historical_data >= lower_bound) & 
+                                  (historical_data <= upper_bound)]
+    historical_avg = filtered_data.mean()
     
     # Create the bar chart
     fig = px.bar(
@@ -429,6 +449,53 @@ def build_expense_trends(merged_df, category, exclude_month):
     )
     
     return fig
+
+
+def build_top_expenses_rank(merged_df, month):
+    # Filter data for the selected month and expenses only
+    filtered_df = merged_df[(merged_df['Month'] == month) & 
+                           (merged_df['Sorting Type'] == 'Expense') &
+                           (~merged_df['Category'].isin(['INTERNAL_TRANSFER', 'Venmo']))]
+    
+    # Group by description and sum amounts (make amounts positive)
+    description_totals = filtered_df.groupby('Description')['Amount'].sum() * -1
+    
+    # Sort by amount and get top expenses
+    description_totals = description_totals.sort_values(ascending=True)
+    
+    # Create bar chart
+    fig = px.bar(
+        x=description_totals.values,
+        y=description_totals.index,
+        orientation='h',  # horizontal bars
+        title=f'Top Expenses by Merchant for {month}',
+        labels={
+            'x': 'Amount ($)',
+            'y': 'Merchant'
+        }
+    )
+    
+    # Update layout
+    fig.update_layout(
+        showlegend=False,
+        xaxis_title="Amount ($)",
+        yaxis_title="Merchant",
+        height=max(400, len(description_totals) * 20),  # Dynamically adjust height based on number of items
+        # Format x-axis labels as currency
+        xaxis=dict(
+            tickprefix="$",
+            tickformat=",.0f"
+        )
+    )
+    
+    # Update bar colors
+    fig.update_traces(
+        marker_color='#E74C3C',  # Red color for expenses
+        hovertemplate="$%{x:,.2f}<extra></extra>"  # Clean hover label
+    )
+    
+    return fig
+
 
 # # Example usage --------------------------------------------------------------------------
 

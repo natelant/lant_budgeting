@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from function import process_csv_files, build_bottom_line, build_bar_chart, build_scatterplot, build_expense_tracker, build_expense_trends
+from function import process_csv_files, build_bottom_line, build_bar_chart, build_scatterplot, build_expense_tracker, build_expense_trends, build_top_expenses_rank
 import os
 import plotly.express as px
 from tempfile import mkdtemp
@@ -66,10 +66,21 @@ if uploaded_files:
         st.subheader("Detailed Breakdown")
         bottom_line_df = build_bottom_line(filtered_df)
         
-        # Calculate averages excluding the most recent month
+        # Calculate averages excluding the most recent month and outliers
         most_recent_month = bottom_line_df.columns[-1]  # Last column is most recent
         historical_df = bottom_line_df.drop(columns=[most_recent_month])
-        category_averages = historical_df.mean(axis=1)
+        
+        # Function to calculate average excluding outliers for a series
+        def get_average_without_outliers(series):
+            Q1 = series.quantile(0.25)
+            Q3 = series.quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            return series[(series >= lower_bound) & (series <= upper_bound)].mean()
+        
+        # Calculate averages excluding outliers for each category
+        category_averages = historical_df.apply(lambda row: get_average_without_outliers(row), axis=1)
         
         # Function to color cells based on comparison with average
         def color_cells(val):
@@ -87,15 +98,23 @@ if uploaded_files:
                 # Calculate percentage difference from average
                 pct_diff = (val - avg) / avg if avg != 0 else 0
                 
-                # Convert to RGB color (red for above average, green for below)
-                if pct_diff > 0:
-                    intensity = min(pct_diff * 0.5, 1)  # Scale the intensity
+                # Determine if this is an income category (checking the first element of the tuple)
+                is_income = category[0] == 'Income' or (category[0] == 'Monthly Totals' and category[1] == 'Income')
+                
+                # Convert to RGB color
+                # For Income: green for above average, red for below
+                # For Expenses: red for above average, green for below
+                if (pct_diff > 0) != is_income:  # XOR operation
+                    intensity = min(abs(pct_diff) * 0.5, 1)  # Scale the intensity
                     return f'background-color: rgba(255, 0, 0, {intensity})'
                 else:
                     intensity = min(abs(pct_diff) * 0.5, 1)  # Scale the intensity
                     return f'background-color: rgba(0, 255, 0, {intensity})'
             except Exception as e:
                 return ''
+        
+        # Debug: Print unique categories
+        print("Categories in DataFrame:", bottom_line_df.index.tolist())
         
         # Apply styling and format numbers
         styled_df = bottom_line_df.style\
@@ -134,6 +153,11 @@ if uploaded_files:
         st.subheader("Expense Trends")
         expense_trends = build_expense_trends(filtered_df, expense_category, month_selection)
         st.plotly_chart(expense_trends, use_container_width=True)
+
+        # Top Expenses Rank
+        st.subheader("Top Expenses Rank")
+        top_expenses_rank = build_top_expenses_rank(filtered_df, month_selection)
+        st.plotly_chart(top_expenses_rank, use_container_width=True)
 
         
     finally:
