@@ -484,6 +484,7 @@ def standardize_merchant_name(description):
         'PHILLIPS 66': ['PHILLIPS 66'],
         'ZUPAS': ['ZUPAS'],
         'AUBERGINE': ['AUBERGINE'],
+        'DOORDASH': ['DOORDASH'],
 
         # Add more mappings as needed
     }
@@ -507,7 +508,8 @@ def build_top_expenses_rank(merged_df, month, category):
     # Create a DataFrame with description totals and categories
     description_data = filtered_df.groupby('Standardized_Description').agg({
         'Amount': lambda x: x.sum() * -1,
-        'Category': 'first'  # Get the category for each description
+        'Category': 'first',  # Get the category for each description
+        'ID': 'count'  # Count number of transactions
     }).reset_index()
     
     # Sort by amount and get top 20
@@ -528,7 +530,7 @@ def build_top_expenses_rank(merged_df, month, category):
             'y': 'Merchant',
             'Standardized_Description': 'Merchant'
         },
-        custom_data=[description_data['Category']]  # Add category data for hover
+        custom_data=[description_data['Category'], description_data['ID']]  # Add category and transaction count data for hover
     )
     
     # Update traces with custom colors and hover template
@@ -536,7 +538,8 @@ def build_top_expenses_rank(merged_df, month, category):
         marker_color=colors,
         hovertemplate="<b>%{y}</b><br>" +
                       "Amount: $%{x:,.2f}<br>" +
-                      "Category: %{customdata[0]}" +
+                      "Category: %{customdata[0]}<br>" +
+                      "Transactions: %{customdata[1]}" +
                       "<extra></extra>"  # Removes trace name from hover
     )
     
@@ -551,6 +554,79 @@ def build_top_expenses_rank(merged_df, month, category):
     )
     
     return fig
+
+def build_bottom_line_per_day(merged_df): 
+    # Filter out the INTERNAL_TRANSFER category 
+    filtered_df = merged_df[~merged_df['Category'].isin(['INTERNAL_TRANSFER'])]
+
+    # Convert Transaction Date column to datetime if it's not already
+    filtered_df['Transaction Date'] = pd.to_datetime(filtered_df['Transaction Date'])
+
+    # Calculate days in each month
+    month_days = {}
+    for month in filtered_df['Month'].unique():
+        month_data = filtered_df[filtered_df['Month'] == month]
+        if month == filtered_df['Month'].max():  # Most recent month
+            # Calculate actual days in the data range
+            days = (month_data['Transaction Date'].max() - month_data['Transaction Date'].min()).days + 1
+        else:
+            # Get the number of days in the full month
+            days = pd.Period(month).days_in_month
+        month_days[month] = days
+
+    # Create separate DataFrames for Income and Expenses
+    income_df = filtered_df[filtered_df['Sorting Type'] == 'Income']
+    expense_df = filtered_df[filtered_df['Sorting Type'] == 'Expense']
+
+    # Calculate monthly totals and divide by days in month
+    monthly_totals = filtered_df.groupby(['Month', 'Sorting Type']).sum('Amount').abs().reset_index()
+    monthly_totals['Amount'] = monthly_totals.apply(
+        lambda row: row['Amount'] / month_days[row['Month']], 
+        axis=1
+    )
+    
+    monthly_totals = monthly_totals.pivot(index='Month', columns='Sorting Type', values='Amount')
+    monthly_totals['Balance'] = monthly_totals['Income'] - monthly_totals['Expense']
+    
+    # Convert to long format
+    long_format_df = monthly_totals.reset_index().melt(
+        id_vars=['Month'],
+        value_vars=['Expense', 'Income', 'Balance'],
+        var_name='Sorting Type',
+        value_name='Amount'
+    )
+
+    # Define the desired order of Sorting Type
+    sorting_type_order = ['Income', 'Expense', 'Balance']
+    
+    # Create pivot and reindex rows to match desired order
+    monthly_pivot = long_format_df.pivot(index='Sorting Type', columns='Month', values='Amount')\
+                                .reindex(sorting_type_order)
+    
+    # Get the ordered list of months from monthly_pivot
+    ordered_months = monthly_pivot.columns.tolist()
+    
+    # Create pivot tables for Income and Expenses, divide by days, and reindex columns
+    income_pivot = pd.pivot_table(income_df, values='Amount', index='Category', 
+                                 columns='Month', aggfunc='sum').reindex(columns=ordered_months)
+    expense_pivot = pd.pivot_table(expense_df, values='Amount', index='Category', 
+                                  columns='Month', aggfunc='sum').reindex(columns=ordered_months)
+    
+    # Divide values by days in month
+    for month in ordered_months:
+        if month in income_pivot.columns:
+            income_pivot[month] = income_pivot[month] / month_days[month]
+        if month in expense_pivot.columns:
+            expense_pivot[month] = expense_pivot[month] / month_days[month]
+    
+    # concatenate the pivot tables
+    pivot_table = pd.concat([
+        pd.concat([income_pivot], keys=['Income']),
+        pd.concat([expense_pivot], keys=['Expenses']),
+        pd.concat([monthly_pivot], keys=['Monthly Totals'])
+    ])
+
+    return pivot_table
 
 
 # # Example usage --------------------------------------------------------------------------

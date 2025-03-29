@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from function import process_csv_files, build_bottom_line, build_bar_chart, build_scatterplot, build_expense_tracker, build_expense_trends, build_top_expenses_rank
+from function import process_csv_files, build_bottom_line, build_bar_chart, build_scatterplot, build_expense_tracker, build_expense_trends, build_top_expenses_rank, build_bottom_line_per_day
 import os
 import plotly.express as px
 from tempfile import mkdtemp
@@ -79,8 +79,15 @@ if uploaded_files:
         bar_chart = build_bar_chart(filtered_df)
         st.plotly_chart(bar_chart, use_container_width=True)
         
-        st.subheader("Detailed Breakdown")
-        bottom_line_df = build_bottom_line(filtered_df)
+        st.subheader("Detailed Breakdown (Dollars Per Day)")
+        # Add toggle button for dollars display type
+        display_type = st.toggle("Show Total Dollars", value=False, help="Toggle between Total Dollars and Per Day Dollars")
+        
+        # Choose which function to call based on toggle state
+        if display_type:  # If True, show total dollars
+            bottom_line_df = build_bottom_line(filtered_df)
+        else:  # If False (default), show per day dollars
+            bottom_line_df = build_bottom_line_per_day(filtered_df)
         
         # Calculate averages excluding the most recent month and outliers
         most_recent_month = bottom_line_df.columns[-1]  # Last column is most recent
