@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from function import process_csv_files, build_bottom_line, build_bar_chart, build_scatterplot, build_expense_tracker, build_expense_trends, build_top_expenses_rank, build_bottom_line_per_day
+from function import process_csv_files, build_bottom_line, build_bar_chart, build_scatterplot, build_expense_tracker, build_expense_trends, build_top_expenses_rank, build_bottom_line_per_day, get_expense_categories, calculate_budget_comparison, build_budget_vs_actual_chart, style_budget_table, get_budget_summary_stats, get_default_budgets, get_default_budget_for_category
 import os
 import plotly.express as px
 from tempfile import mkdtemp
@@ -78,6 +78,70 @@ if uploaded_files:
         st.subheader("Monthly Summary")
         bar_chart = build_bar_chart(filtered_df)
         st.plotly_chart(bar_chart, use_container_width=True)
+
+        st.subheader("Budget Analysis and Opportunity")
+        
+        # Budget Tracking Section
+        st.subheader("Budget vs Actual Spending")
+        
+        # Month selection for budget analysis
+        budget_months = sorted(filtered_df['Month'].unique(), reverse=True)
+        budget_month = st.selectbox(
+            "Select month for budget analysis",
+            budget_months,
+            index=0,
+            key="budget_month_selector"
+        )
+        
+        # Get expense categories for budget tracking
+        expense_categories = get_expense_categories(filtered_df)
+        
+        # Create budget inputs
+        st.write("Set your monthly budget for each category:")
+        
+        # Create columns for budget inputs
+        budget_cols = st.columns(3)
+        budget_values = {}
+        
+        for i, category in enumerate(expense_categories):
+            col_idx = i % 3
+            with budget_cols[col_idx]:
+                # Get default value for this category
+                default_value = get_default_budget_for_category(category)
+                
+                budget_values[category] = st.number_input(
+                    f"{category} Budget",
+                    min_value=0.0,
+                    value=default_value,
+                    step=100.0,
+                    key=f"budget_{category}"
+                )
+        
+        # Calculate budget comparison
+        budget_df = calculate_budget_comparison(filtered_df, budget_month, budget_values)
+        
+        # Create and display budget vs actual chart
+        if not budget_df.empty:
+            budget_chart = build_budget_vs_actual_chart(budget_df, budget_month)
+            if budget_chart:
+                st.plotly_chart(budget_chart, use_container_width=True)
+            
+            # Display budget summary table
+            st.subheader("Budget Summary")
+            styled_budget_df = style_budget_table(budget_df)
+            st.dataframe(styled_budget_df, use_container_width=True)
+            
+            # Summary statistics
+            stats = get_budget_summary_stats(budget_df)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Budget", f"${stats['total_budget']:,.2f}")
+            with col2:
+                st.metric("Total Actual", f"${stats['total_actual']:,.2f}")
+            with col3:
+                st.metric("Total Difference", f"${stats['total_difference']:,.2f}", 
+                         delta_color="inverse" if stats['total_difference'] > 0 else "normal")
         
         st.subheader("Detailed Breakdown (Dollars Per Day)")
         # Add toggle button for dollars display type

@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import plotly.express as px
 from datetime import datetime
+import numpy as np
 
 
 # Functions --------------------------------------------------------------------------
@@ -627,6 +628,129 @@ def build_bottom_line_per_day(merged_df):
     ])
 
     return pivot_table
+
+
+def get_expense_categories(merged_df):
+    """Get unique expense categories for budget tracking."""
+    expense_categories = merged_df[merged_df['Sorting Type'] == 'Expense']['Category'].unique()
+    expense_categories = sorted(expense_categories[~np.isin(expense_categories, ['INTERNAL_TRANSFER'])])
+    return expense_categories
+
+
+def calculate_budget_comparison(merged_df, budget_month, budget_values):
+    """Calculate budget vs actual spending comparison."""
+    # Calculate actual spending for selected month
+    month_data = merged_df[merged_df['Month'] == budget_month]
+    actual_spending = month_data[month_data['Sorting Type'] == 'Expense'].groupby('Category')['Amount'].sum()
+    
+    # Get expense categories
+    expense_categories = get_expense_categories(merged_df)
+    
+    # Create budget comparison dataframe
+    budget_comparison = []
+    for category in expense_categories:
+        actual = abs(actual_spending.get(category, 0))  # Make actual spending positive
+        budget = budget_values.get(category, 0)
+        difference = actual - budget  # Now difference is actual (positive) - budget
+        budget_comparison.append({
+            'Category': category,
+            'Budget': budget,
+            'Actual': actual,
+            'Difference': difference,
+            'Over/Under': 'Over' if difference > 0 else 'Under' if difference < 0 else 'On Target'
+        })
+    
+    return pd.DataFrame(budget_comparison)
+
+
+def build_budget_vs_actual_chart(budget_df, budget_month):
+    """Create budget vs actual spending bar chart."""
+    if budget_df.empty:
+        return None
+    
+    # Prepare data for plotting
+    plot_data = []
+    for _, row in budget_df.iterrows():
+        plot_data.extend([
+            {'Category': row['Category'], 'Amount': row['Budget'], 'Type': 'Budget'},
+            {'Category': row['Category'], 'Amount': row['Actual'], 'Type': 'Actual'}
+        ])
+    
+    plot_df = pd.DataFrame(plot_data)
+    
+    # Create the bar chart
+    fig = px.bar(
+        plot_df,
+        x='Category',
+        y='Amount',
+        color='Type',
+        barmode='group',
+        title=f'Budget vs Actual Spending - {budget_month}',
+        color_discrete_map={'Budget': '#1f77b4', 'Actual': '#ff7f0e'}
+    )
+    
+    fig.update_layout(
+        xaxis_title="Category",
+        yaxis_title="Amount ($)",
+        showlegend=True
+    )
+    
+    return fig
+
+
+def style_budget_table(budget_df):
+    """Style the budget dataframe to highlight over/under budget."""
+    def color_difference(val):
+        if pd.isna(val):
+            return ''
+        try:
+            val = float(val)
+            if val > 0:
+                return 'background-color: rgba(255, 0, 0, 0.3)'  # Red for over budget
+            elif val < 0:
+                return 'background-color: rgba(0, 255, 0, 0.3)'  # Green for under budget
+            else:
+                return 'background-color: rgba(128, 128, 128, 0.3)'  # Gray for on target
+        except:
+            return ''
+    
+    return budget_df.style\
+        .format({'Budget': '${:,.2f}', 'Actual': '${:,.2f}', 'Difference': '${:,.2f}'})\
+        .applymap(color_difference, subset=['Difference'])
+
+
+def get_budget_summary_stats(budget_df):
+    """Get summary statistics for budget analysis."""
+    total_budget = budget_df['Budget'].sum()
+    total_actual = budget_df['Actual'].sum()
+    total_difference = total_actual - total_budget
+    
+    return {
+        'total_budget': total_budget,
+        'total_actual': total_actual,
+        'total_difference': total_difference
+    }
+
+
+def get_default_budgets():
+    """Get default budget values for common expense categories."""
+    default_budgets = {
+        'Automotive': 100.0,
+        "Bills & Utilities": 250.0,
+        "Food & Drink": 100.0,
+        "Gas": 250.0,
+        "Groceries": 750.0,
+        "Health & Wellness": 50.0,
+        "Rent": 1400.0,
+        "Tithing & Fast Offering": 800.0
+    }
+    return default_budgets
+
+
+def get_default_budget_for_category(category):
+    """Get default budget value for a specific category."""
+    default_budgets = get_default_budgets()
+    return default_budgets.get(category, 0.0)
 
 
 # # Example usage --------------------------------------------------------------------------
