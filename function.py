@@ -86,12 +86,18 @@ def process_csv_files(folder_path):
     # Combine all credit card dataframes
     combined_credit_card_df = pd.concat(credit_card_dfs, ignore_index=True)
 
+    # Add source column to each dataframe before merging
+    if not checking_account_df.empty:
+        checking_account_df['Source'] = 'Checking Account'
+    if not combined_credit_card_df.empty:
+        combined_credit_card_df['Source'] = 'Credit Card'
+    
     # Merge checking account and credit card data
     # Note: You may need to adjust the merge parameters based on your data structure
     merged_df = pd.concat([checking_account_df, combined_credit_card_df], ignore_index=True)
 
     # Rearrange columns
-    merged_df = merged_df[['Transaction Date', 'Sorting Type', 'Category', 'Amount', 'Description']]
+    merged_df = merged_df[['Transaction Date', 'Sorting Type', 'Category', 'Amount', 'Description', 'Source']]
     # Convert 'Transaction Date' to datetime and create 'Month' column
     merged_df['Transaction Date'] = pd.to_datetime(merged_df['Transaction Date'])
     merged_df['Month'] = merged_df['Transaction Date'].dt.to_period('M')
@@ -309,7 +315,7 @@ def build_scatterplot(merged_df, category):
     return fig
     
 
-def build_expense_tracker(merged_df, category, month):
+def build_expense_tracker(merged_df, category, month, budget=None):
     # Filter data for the selected category
     filtered_df = merged_df[merged_df['Sorting Type'] == 'Expense']
     filtered_df = filtered_df[filtered_df['Category'] == category]
@@ -380,6 +386,23 @@ def build_expense_tracker(merged_df, category, month):
             mode='lines',
             name='Historical Average',
             line=dict(color='#2E86C1', dash='dash')
+        )
+    
+    # Add budget line if budget is provided
+    if budget is not None and budget > 0:
+        days_in_month = month.days_in_month
+        daily_budget = budget / days_in_month
+        budget_by_day = pd.DataFrame({
+            'Day': range(1, days_in_month + 1),
+            'Cumulative': [daily_budget * day for day in range(1, days_in_month + 1)]
+        })
+        
+        fig.add_scatter(
+            x=budget_by_day['Day'],
+            y=budget_by_day['Cumulative'],
+            mode='lines',
+            name='Budget',
+            line=dict(color='#27AE60', width=3)  # Solid green line
         )
     
     # Update layout
@@ -462,6 +485,10 @@ def build_expense_trends(merged_df, category, exclude_month):
 def standardize_merchant_name(description):
     """Standardize merchant names to group similar entries."""
     description = str(description).upper()  # Convert to uppercase for consistency
+    
+    # Handle Audible transactions with unique IDs
+    if 'AUDIBLE*' in description:
+        return 'AUDIBLE'
     
     # Dictionary of merchant name mappings
     merchant_mappings = {
@@ -732,6 +759,121 @@ def get_budget_summary_stats(budget_df):
     }
 
 
+def calculate_ytd_summary(merged_df):
+    """Calculate year-to-date totals and average monthly expenses."""
+    # Filter out internal transfers
+    filtered_df = merged_df[~merged_df['Category'].isin(['INTERNAL_TRANSFER'])]
+    
+    # Get current year and month
+    current_year = pd.Timestamp.now().year
+    current_month = pd.Timestamp.now().to_period('M')
+    
+    # Filter for current year data
+    ytd_df = filtered_df[filtered_df['Transaction Date'].dt.year == current_year]
+    
+    if ytd_df.empty:
+        return {
+            'ytd_income': 0,
+            'ytd_expenses': 0,
+            'avg_monthly_expenses': 0
+        }
+    
+    # Calculate YTD totals
+    ytd_income = ytd_df[ytd_df['Sorting Type'] == 'Income']['Amount'].sum()
+    ytd_expenses = abs(ytd_df[ytd_df['Sorting Type'] == 'Expense']['Amount'].sum())
+    
+    # Calculate average monthly expenses excluding current month
+    # Filter out current month for average calculation
+    historical_df = ytd_df[ytd_df['Month'] != current_month]
+    
+    if not historical_df.empty:
+        # Calculate expenses for completed months only
+        historical_expenses = abs(historical_df[historical_df['Sorting Type'] == 'Expense']['Amount'].sum())
+        completed_months = historical_df['Month'].nunique()
+        avg_monthly_expenses = historical_expenses / completed_months if completed_months > 0 else 0
+    else:
+        avg_monthly_expenses = 0
+    
+    return {
+        'ytd_income': ytd_income,
+        'ytd_expenses': ytd_expenses,
+        'avg_monthly_expenses': avg_monthly_expenses
+    }
+
+
+def search_vendor_transactions(merged_df, vendor_search_term):
+    """Search for transactions by vendor name."""
+    if not vendor_search_term or vendor_search_term.strip() == "":
+        return pd.DataFrame()
+    
+    # Filter out internal transfers
+    filtered_df = merged_df[~merged_df['Category'].isin(['INTERNAL_TRANSFER'])]
+    
+    # Search for vendor in description (case insensitive)
+    search_results = filtered_df[
+        filtered_df['Description'].str.contains(vendor_search_term, case=False, na=False)
+    ].copy()
+    
+    if search_results.empty:
+        return pd.DataFrame()
+    
+    # Format the results
+    # Multiply by -1 so expenses show as positive and refunds as negative
+    search_results['Amount'] = search_results['Amount'] * -1
+    search_results['Transaction Date'] = pd.to_datetime(search_results['Transaction Date']).dt.strftime('%Y-%m-%d')
+    
+    # Select and rename columns for display
+    display_df = search_results[['Transaction Date', 'Description', 'Category', 'Sorting Type', 'Source', 'Amount']].copy()
+    display_df = display_df.rename(columns={
+        'Transaction Date': 'Date',
+        'Description': 'Vendor',
+        'Sorting Type': 'Type',
+        'Amount': 'Amount ($)'
+    })
+    
+    # Sort by date (most recent first)
+    display_df = display_df.sort_values('Date', ascending=False)
+    
+    return display_df
+
+
+def search_category_transactions(merged_df, category, month):
+    """Search for transactions by category and month."""
+    if not category or category.strip() == "":
+        return pd.DataFrame()
+    
+    # Filter out internal transfers
+    filtered_df = merged_df[~merged_df['Category'].isin(['INTERNAL_TRANSFER'])]
+    
+    # Filter by category and month
+    search_results = filtered_df[
+        (filtered_df['Category'] == category) & 
+        (filtered_df['Month'] == month)
+    ].copy()
+    
+    if search_results.empty:
+        return pd.DataFrame()
+    
+    # Format the results
+    # Multiply by -1 so expenses show as positive and refunds as negative
+    search_results['Amount'] = search_results['Amount'] * -1
+    search_results['Transaction Date'] = pd.to_datetime(search_results['Transaction Date']).dt.strftime('%Y-%m-%d')
+    
+    # Select and rename columns for display
+    display_df = search_results[['Transaction Date', 'Description', 'Category', 'Sorting Type', 'Source', 'Amount']].copy()
+    display_df = display_df.rename(columns={
+        'Transaction Date': 'Date',
+        'Description': 'Vendor',
+        'Sorting Type': 'Type',
+        'Amount': 'Amount ($)'
+    })
+    
+    # Sort by date (most recent first)
+    display_df = display_df.sort_values('Date', ascending=False)
+    
+    return display_df
+
+
 def get_default_budgets():
     """Get default budget values for common expense categories."""
     default_budgets = {
@@ -751,6 +893,140 @@ def get_default_budget_for_category(category):
     """Get default budget value for a specific category."""
     default_budgets = get_default_budgets()
     return default_budgets.get(category, 0.0)
+
+
+def identify_monthly_subscriptions(merged_df):
+    """Identify monthly subscriptions and recurring expenses."""
+    # Filter out internal transfers
+    filtered_df = merged_df[~merged_df['Category'].isin(['INTERNAL_TRANSFER'])]
+    
+    # Focus on expenses only
+    expense_df = filtered_df[filtered_df['Sorting Type'] == 'Expense'].copy()
+    
+    if expense_df.empty:
+        return pd.DataFrame()
+    
+    # Standardize vendor names for better grouping
+    expense_df['Standardized_Vendor'] = expense_df['Description'].apply(standardize_merchant_name)
+    
+    # Group by vendor and analyze patterns
+    subscription_candidates = []
+    
+    for vendor in expense_df['Standardized_Vendor'].unique():
+        vendor_transactions = expense_df[expense_df['Standardized_Vendor'] == vendor].copy()
+        
+        if len(vendor_transactions) < 2:  # Need at least 2 transactions to be a subscription
+            continue
+        
+        # Get unique months where this vendor appears
+        unique_months = vendor_transactions['Month'].nunique()
+        total_months = expense_df['Month'].nunique()
+        
+        # Calculate frequency (how often this vendor appears)
+        frequency = len(vendor_transactions) / unique_months
+        
+        # Calculate average amount
+        avg_amount = abs(vendor_transactions['Amount'].mean())
+        
+        # Calculate amount consistency (standard deviation as percentage of mean)
+        amounts = abs(vendor_transactions['Amount'])
+        amount_consistency = (amounts.std() / avg_amount) if avg_amount > 0 else 1
+        
+        # Determine if this looks like a subscription
+        is_subscription = False
+        subscription_type = "Unknown"
+        
+        # Criteria for monthly subscription:
+        # 1. Appears in at least 50% of available months
+        # 2. Frequency is close to 1 (appears once per month)
+        # 3. Amount is relatively consistent (low standard deviation)
+        if (unique_months >= max(2, total_months * 0.5) and  # Appears in at least 50% of months
+            frequency >= 0.8 and  # Appears at least 0.8 times per month on average
+            amount_consistency < 0.3):  # Amount varies by less than 30%
+            
+            is_subscription = True
+            subscription_type = "Monthly Subscription"
+        
+        if is_subscription:
+            # Get most recent transaction
+            most_recent = vendor_transactions.sort_values('Transaction Date').iloc[-1]
+            
+            subscription_candidates.append({
+                'Vendor': vendor,
+                'Category': most_recent['Category'],
+                'Average Amount': avg_amount,
+                'Frequency': frequency,
+                'Months Active': unique_months,
+                'Total Months': total_months,
+                'Amount Consistency': amount_consistency,
+                'Subscription Type': subscription_type,
+                'Last Transaction': most_recent['Transaction Date'].strftime('%Y-%m-%d'),
+                'Source': most_recent['Source']
+            })
+    
+    if not subscription_candidates:
+        return pd.DataFrame()
+    
+    # Create DataFrame and sort by average amount (highest first)
+    subscriptions_df = pd.DataFrame(subscription_candidates)
+    subscriptions_df = subscriptions_df.sort_values('Average Amount', ascending=False)
+    
+    return subscriptions_df
+
+
+def debug_vendor_analysis(merged_df, vendor_name):
+    """Debug function to analyze why a specific vendor wasn't detected as a subscription."""
+    # Filter out internal transfers
+    filtered_df = merged_df[~merged_df['Category'].isin(['INTERNAL_TRANSFER'])]
+    
+    # Focus on expenses only
+    expense_df = filtered_df[filtered_df['Sorting Type'] == 'Expense'].copy()
+    
+    if expense_df.empty:
+        return "No expense data found"
+    
+    # Standardize vendor names for better grouping
+    expense_df['Standardized_Vendor'] = expense_df['Description'].apply(standardize_merchant_name)
+    
+    # Find the vendor (case insensitive)
+    vendor_matches = expense_df[expense_df['Standardized_Vendor'].str.contains(vendor_name, case=False, na=False)]
+    
+    if vendor_matches.empty:
+        return f"No transactions found for vendor containing '{vendor_name}'"
+    
+    # Get the standardized vendor name
+    actual_vendor = vendor_matches['Standardized_Vendor'].iloc[0]
+    vendor_transactions = expense_df[expense_df['Standardized_Vendor'] == actual_vendor].copy()
+    
+    # Calculate metrics
+    unique_months = vendor_transactions['Month'].nunique()
+    total_months = expense_df['Month'].nunique()
+    frequency = len(vendor_transactions) / unique_months
+    avg_amount = abs(vendor_transactions['Amount'].mean())
+    amounts = abs(vendor_transactions['Amount'])
+    amount_consistency = (amounts.std() / avg_amount) if avg_amount > 0 else 1
+    
+    # Check criteria
+    months_criteria = unique_months >= max(2, total_months * 0.5)
+    frequency_criteria = frequency >= 0.8
+    consistency_criteria = amount_consistency < 0.3
+    
+    # Create debug report
+    debug_info = {
+        'Vendor': actual_vendor,
+        'Total Transactions': len(vendor_transactions),
+        'Unique Months': unique_months,
+        'Total Months in Data': total_months,
+        'Frequency': frequency,
+        'Average Amount': avg_amount,
+        'Amount Consistency': amount_consistency,
+        'Months Criteria (≥50%)': months_criteria,
+        'Frequency Criteria (≥0.8)': frequency_criteria,
+        'Consistency Criteria (<30%)': consistency_criteria,
+        'Would be detected as subscription': months_criteria and frequency_criteria and consistency_criteria
+    }
+    
+    return debug_info
 
 
 # # Example usage --------------------------------------------------------------------------
