@@ -29,6 +29,8 @@ def categorize_transaction(row):
             return 'Tithing & Fast Offering'
         elif 'VENMO' in description and abs(amount) == rent:
             return 'Rent'
+        elif 'FONTERA MANAGEM' in description:
+            return 'Rent'
         elif 'VENMO' in description:
             return 'Venmo'
         elif 'External F' in description:
@@ -485,6 +487,7 @@ def standardize_merchant_name(description):
         'ZUPAS': ['ZUPAS'],
         'AUBERGINE': ['AUBERGINE'],
         'DOORDASH': ['DOORDASH'],
+        'FRONTERA': ['FRONTERA'],
 
         # Add more mappings as needed
     }
