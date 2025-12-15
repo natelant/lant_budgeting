@@ -880,14 +880,13 @@ def search_category_transactions(merged_df, category, month):
 def get_default_budgets():
     """Get default budget values for common expense categories."""
     default_budgets = {
-        'Automotive': 100.0,
         "Bills & Utilities": 250.0,
-        "Food & Drink": 100.0,
-        "Gas": 250.0,
-        "Groceries": 750.0,
+        "Food & Drink": 300.0,
+        "Gas": 150.0,
+        "Groceries": 1000.0,
         "Health & Wellness": 50.0,
-        "Rent": 1400.0,
-        "Tithing & Fast Offering": 800.0
+        "Rent": 2500.0,
+        "Tithing & Fast Offering": 1000.0
     }
     return default_budgets
 
