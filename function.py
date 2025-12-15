@@ -30,7 +30,7 @@ def categorize_transaction(row):
             return 'Tithing & Fast Offering'
         elif 'VENMO' in description and abs(amount) == rent:
             return 'Rent'
-        elif 'FONTERA MANAGEM' in description:
+        elif 'Frontera' in description:
             return 'Rent'
         elif 'VENMO' in description:
             return 'Venmo'
